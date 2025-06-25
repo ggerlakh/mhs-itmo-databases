@@ -1,0 +1,6 @@
+tqdm
+click
+redis
+aiohttp
+pymongo
+kafka-python

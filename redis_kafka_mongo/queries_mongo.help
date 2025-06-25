@@ -1,0 +1,11 @@
+show dbs
+use hw4
+db.dropDatabase();
+db.getCollectionNames();
+db.task_2.aggregate([{"$sort": {"timestamp": 1}}]);
+# запросы для второго задания
+db.taxi.createIndex({tpep_pickup_datetime: 1, tpep_dropoff_datetime: 1});
+db.taxi.aggregate([{"$project": {"_id": 1, "trip_id": 1, "VendorID": 1, "tpep_pickup_datetime": 1, "PULocationID": 1, "timestamp": "$tpep_pickup_datetime"}}, {"$sort": {"timestamp": 1}}, {"$merge": "out_col"}]);
+db.taxi.aggregate([{"$project": {"VendorID": 0, "tpep_pickup_datetime": 0, "PULocationID": 0}}, {"$addFields": {"timestamp": "$tpep_dropoff_datetime"}}, {"$sort": {"timestamp": 1}}, {"$merge": "out_col"}]);
+# запрос для проверки наличия коротких поездок
+db.taxi.aggregate([ { "$addFields": { "trip_seconds_duration": { "$divide": [ { "$subtract": ["$tpep_dropoff_datetime", "$tpep_pickup_datetime"] }, 1000] } } }, { "$match": { "trip_seconds_duration": { $lt: 60 } } }] )

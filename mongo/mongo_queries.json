@@ -1,0 +1,85 @@
+{
+    "$facet":
+    {
+        "events_pipe": [
+        {
+            "$group":
+            {
+                "_id": "$actor.id",
+                "user_id":
+                {
+                    "$first": "$actor.id"
+                },
+                "events":
+                {
+                    "$push": "$type"
+                }
+            }
+        },
+        {
+            "$unwind": "$events"
+        },
+        {
+            "$group":
+            {
+                "_id":
+                {
+                    "user_id": "$user_id",
+                    "events": "$events"
+                },
+                "count":
+                {
+                    "$count":
+                    {}
+                }
+            }
+        },
+        {
+            "$group":
+            {
+                "_id": "$_id.user_id",
+                "events":
+                {
+                    "$push":
+                    {
+                        "type": "$_id.events",
+                        "count": "$count"
+                    }
+                }
+            }
+        },
+        {
+            "$project":
+            {
+                "_id": 0,
+                "user_id": "$_id",
+                "events": 1
+            }
+        }],
+        "pushed_to_pipe": [
+        {
+            "$group":
+            {
+                "_id": "$actor.id",
+                "pushed_to":
+                {
+                    "$addToSet":
+                    {
+                        "$cond": [
+                        {
+                            "$eq": ["$type", "PushEvent"]
+                        }, "$repo.name", null]
+                    }
+                }
+            }
+        },
+        {
+            "$project":
+            {
+                "_id": 0,
+                "user_id": "$_id",
+                "pushed_to": 1
+            }
+        }]
+    }
+}

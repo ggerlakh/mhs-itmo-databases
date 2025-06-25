@@ -1,0 +1,106 @@
+show dbs
+use hw3
+db.getCollectionNames()
+db.gh_data.find().limit(1)
+db.dropDatabase()
+db.gh_data.countDocuments()
+db.temp_events_by_ym.drop()
+# task_2
+db.gh_data.insertMany([{_id: '3309262622', type: 1}, {_id: '3309262624', type: 1}], {ordered: false})
+#task_3
+
+db.collection.aggregate([
+  {
+    $facet: {
+      n_no_id: [
+        { $match: { "actor.id": { $exists: false } } },
+        { $count: "count" }
+      ],
+      n_no_login: [
+        { $match: { "actor.login": { $exists: false } } },
+        { $count: "count" }
+      ],
+      n_one_login_many_id: [
+        {
+          $group: {
+            _id: "$actor.login",
+            uniqueIds: { $addToSet: "$actor.id" }
+          }
+        },
+        { $match: { "uniqueIds.1": { $exists: true } } },
+        { $count: "count" }
+      ],
+      n_one_id_many_login: [
+        {
+          $group: {
+            _id: "$actor.id",
+            uniqueLogins: { $addToSet: "$actor.login" }
+          }
+        },
+        { $match: { "uniqueLogins.1": { $exists: true } } },
+        { $count: "count" }
+      ]
+    }
+  },
+  {
+    $project: {
+      "n_no_id": { "$ifNull": [ { "$arrayElemAt": ["$n_no_id.count", 0] }, 0] },
+      "n_no_login": { "$ifNull": [ { "$arrayElemAt": ["$n_no_login.count", 0] }, 0] },
+      "n_one_login_many_id": { "$ifNull": [ { "$arrayElemAt": ["$n_one_login_many_id.count", 0] }, 0] },
+      "n_one_id_many_login": { "$ifNull": [ { "$arrayElemAt": ["$n_one_id_many_login.count", 0] }, 0] }
+    }
+  }
+])
+
+# task_3_dupl (4)
+JSON beautifier - https://beautifier.io/
+(test usr, id = 1547093)
+
+(first pipe for general $facet for getting "events" arr)
+db.gh_data.aggregate([ {$group: {_id: "$actor.id", user_id: { "$first": "$actor.id" }, "events": { "$push": "$type" }} }, {"$unwind": "$events"}, {$group: {_id: {"user_id": "$user_id", "events": "$events"}, count: { $count: {} }}}, {$group: {"_id": "$_id.user_id", "events": {"$push": {"type": "$_id.events", "count": "$count"} } }}, {"$project": {"_id": 0, "user_id": "$_id", "events": 1} }] )
+
+(second pipe for general $facet for getting "events_by_ym" arr)
+db.gh_data.aggregate([{$project: {"_id": "$actor.id", "type": "$type", "year": { "$year": { "$dateFromString": { "dateString": "$created_at" } } }, "month": { "$month": { "$dateFromString": { "dateString": "$created_at" } } }}}, {"$group": {"_id": {"user_id": "$_id", "year": "$year", "month": "$month"}, "events": {"$push": {"type": "$type"} }}}, {"$unwind": "$events"}, {"$group": {"_id": {"user_id": "$_id.user_id", "year": "$_id.year", "month": "$_id.month", "event": "$events.type"}, count: { "$count": {} }}}, {"$group": {"_id": {"user_id": "$_id.user_id", "year": "$_id.year", "month": "$_id.month"}, "events": {"$push": {"type": "$_id.event", "count": "$count"}}}}, {"$project": {"_id": 0, "user_id": "$_id.user_id", "year": "$_id.year", "month": "$_id.month", "events": 1} }])
+
+(third pipe for general $facet for getting "pushed_to" arr)
+db.gh_data.aggregate([{$group: {_id: "$actor.id", "pushed_to": {"$addToSet": {"$cond": [ { "$eq": ["$type", "PushEvent"] }, "$repo.name", null ] }}}}, {"$project": {"_id": 0, "user_id": "$_id", "pushed_to": 1} }])
+
++ в конце сформировать коллекцию через параметр 'out'
+
+
+Решение через создание временных коллекций
+++++++
+// создание первой коллекции temp_events
+db.hw_3_lim.aggregate([{ "$group": { "_id": "$actor.id", "user_id": { "$first": "$actor.id" }, "events": { "$push": "$type" } } }, { "$unwind": "$events" }, { "$group": { "_id": { "user_id": "$user_id", "events": "$events" }, "count": { "$count": {} } } }, { "$group": { "_id": "$_id.user_id", "events": { "$push": { "type": "$_id.events", "count": "$count" } } } }, { "$project": { "_id": 0, "user_id": "$_id", "events": 1 } }, {$out: "temp_events"}])
+// создание второй коллекции temp_pushed
+db.gh_data.aggregate([{$group: {_id: "$actor.id", "pushed_to": {"$addToSet": {"$cond": [ { "$eq": ["$type", "PushEvent"] }, "$repo.name", null ] }}}}, {"$project": {"_id": 0, "user_id": "$_id", "pushed_to": 1} }, {$out: "temp_pushed"}])
+// создание третьей коллекции temp_events_by_ym
+db.hw_3_lim.aggregate([ { $project: { "_id": "$actor.id", "type": "$type", "year": { "$year": { "$dateFromString": { "dateString": "$created_at" } } }, "month": { "$month": { "$dateFromString": { "dateString": "$created_at" } } } } }, { "$group": { "_id": { "user_id": "$_id", "year": "$year", "month": "$month" }, "events": { "$push": { "type": "$type" } } } }, { "$unwind": "$events" }, { "$group": { "_id": { "user_id": "$_id.user_id", "year": "$_id.year", "month": "$_id.month", "event": "$events.type" }, count: { "$count": {} } } }, { "$group": { "_id": { "user_id": "$_id.user_id", "year": "$_id.year", "month": "$_id.month" }, "events": { "$push": { "type": "$_id.event", "count": "$count" } } } }, { "$project": { "_id": 0, "user_id": "$_id.user_id", "events_by_ym": { "year": "$_id.year", "month": "$_id.month", "events": "$events" } } }, {"$sort": {"events_by_ym.year": 1, "events_by_ym.month": 1}}, {"$out": "temp_events_by_ym"}] )
+// объединение по полю user_id
+db.temp_events.aggregate([ { $lookup: { from: "temp_pushed", localField: "user_id", foreignField: "user_id", as: "pushed_data" } }, { $lookup: { from: "temp_events_by_ym", localField: "user_id", foreignField: "user_id", as: "res_data" } }, { $unwind: "$res_data" }, { $project: { _id: 0, user_id: 1, events: "$events", pushed_to: { "$arrayElemAt": ["$pushed_data.pushed_to", 0] }, events_by_ym: "$res_data.events_by_ym"} }] );
+++++++
+
+#task-4
+
+db.gh_data.find({"type": "IssuesEvent", "payload.action": "opened"})
+
+#task-7
+db.t8.insertMany([
+  {"id": 10, "n": 12, "a": 2},
+  {"id": 3, "n": 3, "a": -7},
+  {"id": 8, "n": 5, "a": 0},
+  {"id": 7, "n": 8, "a": -24},
+  {"id": 5, "n": 5, "a": 95},
+  {"id": 13, "n": 26, "a": -3},
+  {"id": 4, "n": 9, "a": -1},
+  {"id": 11, "n": 20, "a": 41},
+  {"id": 2, "n": 2, "a": 5},
+  {"id": 12, "n": 25, "a": 64},
+  {"id": 1, "n": 2, "a": 45},
+  {"id": 9, "n": 10, "a": 100},
+])
+
+#task-8
+db.gh_data.aggregate([{"$match": {"type": "PushEvent"}}, {"$unwind": "$payload.commits"}, {"$addFields": { "domain": {"$regexMatch": {"input": "$payload.commits.author.email", "regex": /^.+@([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])\.[a-zA-Z]{2,}$/i}}}}, {"$group": {"_id": {"email": "$payload.commits.author.email", "repo_name": "$repo.name"}, "count": {"$sum": 1}}}, {"$group": {"_id": "$_id.email", "count": {"$sum": 1}}}, {"$project": {"_id": 0, "host": "$_id", "count": 1}}, {"$sort": {"count": -1}}])
+
+db.gh_data.aggregate([{"$match": {"type": "PushEvent"}}, {"$unwind": "$payload.commits"}, {"$addFields": { "domain": {"$regexMatch": {"input": "$payload.commits.author.email", "regex": /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}$/}}}}, {"$match": {"domain": true}}, {"$group": {"_id": {"email": "$payload.commits.author.email", "repo_name": "$repo.name"}, "count": {"$sum": 1}}}, {"$group": {"_id": "$_id.email", "count": {"$sum": 1}}}, {"$project": {"_id": 0, "host": "$_id", "count": 1}}, {"$sort": {"count": -1}}])

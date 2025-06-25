@@ -1,0 +1,331 @@
+pipeline = [
+    {
+        "$facet": {
+            "events_pipeline": [
+                {
+                    "$group": {
+                        "_id": "$actor.id",
+                        "user_id": { "$first": "$actor.id" },
+                        "events": {
+                            "$push": {
+                                "event": "$type",
+                                "count": { "$sum": 1 }
+                            }
+                        }
+                    }
+                }
+            ],
+            "events_by_ym_pipeline": [
+                {
+                    "$group": {
+                        "_id": {
+                            "user_id": "$actor.id",
+                            "year": { "$year": { "$dateFromString": { "dateString": "$created_at" } } },
+                            "month": { "$month": { "$dateFromString": { "dateString": "$created_at" } } }
+                        },
+                        "events": {
+                            "$push": {
+                                "event": "$type",
+                                "count": { "$sum": 1 }
+                            }
+                        }
+                    }
+                },
+                {
+                    "$group": {
+                        "_id": "$_id.user_id",
+                        "events_by_ym": {
+                            "$push": {
+                                "year": "$_id.year",
+                                "month": "$_id.month",
+                                "events": "$events"
+                            }
+                        }
+                    }
+                }
+            ],
+            "pushed_to_pipeline": [
+                {
+                    "$group": {
+                        "_id": "$actor.id",
+                        "pushed_to": {
+                            "$addToSet": {
+                                "$cond": [
+                                    { "$eq": ["$type", "PushEvent"] },
+                                    "$repo.name",
+                                    None
+                                ]
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "$project": {
+            "events_pipeline": 1,
+            "events_by_ym_pipeline": 1,
+            "pushed_to_pipeline": 1
+        }
+    },
+    {
+        "$unwind": "$events_pipeline"
+    },
+    {
+        "$unwind": "$events_by_ym_pipeline"
+    },
+    {
+        "$unwind": "$pushed_to_pipeline"
+    },
+    {
+        "$lookup": {
+            "from": "events_by_ym_pipeline",
+            "localField": "events_pipeline.user_id",
+            "foreignField": "_id",
+            "as": "events_by_ym"
+        }
+    },
+    {
+        "$lookup": {
+            "from": "pushed_to_pipeline",
+            "localField": "events_pipeline.user_id",
+            "foreignField": "_id",
+            "as": "pushed_to"
+        }
+    },
+    {
+        "$group": {
+            "_id": "$events_pipeline.user_id",
+            "user_id": { "$first": "$events_pipeline.user_id" },
+            "events": { "$first": "$events_pipeline.events" },
+            "events_by_ym": { "$first": "$events_by_ym" },
+            "pushed_to": { "$first": "$pushed_to" }
+        }
+    },
+    {
+        "$out": "hw3-out"
+    }
+]
+
+print(json.dumps(list(collection.aggregate(pipeline)), indent=4))
+
+
+
+===============
+
+
+pipeline = [
+        {
+            "$facet": {
+                "events_pipeline": [
+                    {
+                        "$group": 
+                        {
+                            "_id": "$actor.id",
+                            "user_id": { "$first": "$actor.id"},
+                            "events": { "$push": "$type"}
+                        }
+                    },
+                    {
+                        "$unwind": "$events"
+                    },
+                    {
+                        "$group":
+                        {
+                            "_id": {
+                                "user_id": "$user_id",
+                                "events": "$events"
+                            },
+                            "count": { "$count": {} }
+                        }
+                    },
+                    {
+                        "$group":
+                        {
+                            "_id": "$_id.user_id",
+                            "events":
+                            {
+                                "$push":
+                                {
+                                    "type": "$_id.events",
+                                    "count": "$count"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "$project": {"_id": 0, "user_id": "$_id", "events": 1} 
+                    }
+                ],
+                "events_by_ym_pipeline": [
+                    {
+                        "$project":
+                        {
+                            "_id": "$actor.id",
+                            "type": "$type",
+                            "year":
+                            {
+                                "$year":
+                                {
+                                    "$dateFromString":
+                                    {
+                                        "dateString": "$created_at"
+                                    }
+                                }
+                            },
+                            "month":
+                            {
+                                "$month":
+                                {
+                                    "$dateFromString":
+                                    {
+                                        "dateString": "$created_at"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "$group":
+                        {
+                            "_id":
+                            {
+                                "user_id": "$_id",
+                                "year": "$year",
+                                "month": "$month"
+                            },
+                            "events":
+                            {
+                                "$push":
+                                {
+                                    "type": "$type"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "$unwind": "$events"
+                    },
+                    {
+                        "$group":
+                        {
+                            "_id":
+                            {
+                                "user_id": "$_id.user_id",
+                                "year": "$_id.year",
+                                "month": "$_id.month",
+                                "event": "$events.type"
+                            },
+                            "count": { "$count": {} }
+                        }
+                    },
+                    {
+                        "$group":
+                        {
+                            "_id":
+                            {
+                                "user_id": "$_id.user_id",
+                                "year": "$_id.year",
+                                "month": "$_id.month"
+                            },
+                            "events":
+                            {
+                                "$push":
+                                {
+                                    "type": "$_id.event",
+                                    "count": "$count"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "$project":
+                        {
+                            "_id": 0,
+                            "user_id": "$_id.user_id",
+                            "year": "$_id.year",
+                            "month": "$_id.month",
+                            "events": 1
+                        }
+                    }
+                ],
+                "pushed_to_pipeline": [
+                    {
+                        "$group":
+                        {
+                            "_id": "$actor.id",
+                            "pushed_to":
+                            {
+                                "$addToSet":
+                                {
+                                    "$cond": 
+                                    [
+                                        {
+                                            "$eq": ["$type", "PushEvent"]
+                                        }, 
+                                        "$repo.name", 
+                                        None
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+        "$project": {
+            "events_pipeline": 1,
+            "events_by_ym_pipeline": 1,
+            "pushed_to_pipeline": 1
+        }
+    },
+    {
+        "$unwind": "$events_pipeline"
+    },
+    {
+        "$unwind": "$events_by_ym_pipeline"
+    },
+    {
+        "$unwind": "$pushed_to_pipeline"
+    },
+    {
+        "$lookup": {
+            "from": "events_by_ym_pipeline",
+            "localField": "events_pipeline.user_id",
+            "foreignField": "_id",
+            "as": "events_by_ym"
+        }
+    },
+    {
+        "$lookup": {
+            "from": "pushed_to_pipeline",
+            "localField": "events_pipeline.user_id",
+            "foreignField": "_id",
+            "as": "pushed_to"
+        }
+    },
+    {
+        "$group": {
+            "_id": "$events_pipeline.user_id",
+            "user_id": { "$first": "$events_pipeline.user_id" },
+            "events": { "$first": "$events_pipeline.events" },
+            "events_by_ym": { "$first": "$events_by_ym" },
+            "pushed_to": { "$first": "$pushed_to" }
+        }
+    },
+    {
+        "$out": "hw3-out"
+    }
+    ]
+
+
+{"$project": {"events": { "$arrayElemAt": ["$events_pipeline", 0] },"events_by_ym": { "$arrayElemAt": ["$events_by_ym_pipeline", 0] },"pushed_to": { "$arrayElemAt": ["$pushed_to_pipeline", 0] }}
+
+
+
++++++++++++++
+
+db.hw_3_lim.aggregate([ { "$facet": { "events_pipeline": [ { "$group": { "_id": "$actor.id", "user_id": { "$first": "$actor.id" }, "events": { "$push": { "event": "$type", "count": { "$sum": 1 } } } } }], "events_by_ym_pipeline": [ { "$group": { "_id": { "user_id": "$actor.id", "year": { "$year": { "$dateFromString": { "dateString": "$created_at" } } }, "month": { "$month": { "$dateFromString": { "dateString": "$created_at" } } } }, "events": { "$push": { "event": "$type", "count": { "$sum": 1 } } } } }, { "$group": { "_id": "$_id.user_id", "events_by_ym": { "$push": { "year": "$_id.year", "month": "$_id.month", "events": "$events" } } } }], "pushed_to_pipeline": [ { "$group": { "_id": "$actor.id", "pushed_to": { "$addToSet": { "$cond": [ { "$eq": ["$type", "PushEvent"] }, "$repo.name", null] } } } }] } }, {"$project": {"events": { "$arrayElemAt": ["$events_pipeline", 0] },"events_by_ym": { "$arrayElemAt": ["$events_by_ym_pipeline", 0] },"pushed_to": { "$arrayElemAt": ["$pushed_to_pipeline", 0] }}}])
+        },
